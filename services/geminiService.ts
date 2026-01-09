@@ -130,7 +130,7 @@ export const translateText = async (text: string, targetLang: Language): Promise
     const target = targetLang === 'en' ? 'English' : 'Chinese (Simplified)';
     try {
         const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
+            model: 'gemini-1.5-flash',
             contents: `Translate the following Japanese text to ${target}. Only provide the translation text: "${text}"`,
         });
         return response.text?.trim() || "Translation failed.";
@@ -151,7 +151,7 @@ export const startChat = async (
   const ai = getAIClient();
 
   chatSession = ai.chats.create({
-    model: 'gemini-3-flash-preview',
+    model: 'gemini-1.5-flash',
     config: {
       systemInstruction: getSystemInstruction(character, mode, goal, topic, lang),
       temperature: 0.7,
