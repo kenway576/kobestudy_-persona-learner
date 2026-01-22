@@ -7,10 +7,8 @@ import {
 } from "@google/generative-ai";
 import { Character, ChatMode, N3GrammarTopic, DialoguePage, WordReading, Message, Language } from '../types';
 
-// 定义超时时间
-const TIMEOUT_MS = 15000;
+const TIMEOUT_MS = 20000; // 稍微延长一点超时，因为 Pro 模型比较慢
 
-// 定义每个角色拥有的服装代码
 const WARDROBE: Record<string, string[]> = {
   'asuka':  ['casual', 'gym', 'swim', 'maid', 'autumn'],
   'hikari': ['casual', 'gym', 'swim', 'yukata', 'autumn'],
@@ -19,21 +17,18 @@ const WARDROBE: Record<string, string[]> = {
   'haku':   ['casual', 'apron', 'summer', 'prince']
 };
 
-// 全局对话 Session
 let chatSession: ChatSession | null = null;
 
-// 1. 获取 AI 实例 (优先使用用户 Key)
+// 1. 获取 AI 实例
 const getGenAI = (userApiKey?: string) => {
-  // 🔥 修复点：优先读取传入的 userApiKey
   const key = userApiKey || (import.meta.env.VITE_GOOGLE_API_KEY as string);
-  
   if (!key) {
     throw new Error("No API Key found. Please provide a key in settings or .env file.");
   }
   return new GoogleGenerativeAI(key);
 };
 
-// 2. 超时控制辅助函数
+// 2. 超时控制
 const withTimeout = <T>(promise: Promise<T>, ms: number, errorMsg: string): Promise<T> => {
     return new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error(errorMsg)), ms);
@@ -44,7 +39,7 @@ const withTimeout = <T>(promise: Promise<T>, ms: number, errorMsg: string): Prom
     });
 };
 
-// 3. 生成系统提示词
+// 3. Prompt (保持不变)
 const getSystemInstruction = (character: Character, mode: ChatMode, goal: string, topic: N3GrammarTopic, lang: Language) => {
   const personaBase = character.systemPrompt;
   const pedagogicalLang = lang === 'en' ? 'English' : 'Chinese (Simplified)';
@@ -98,7 +93,6 @@ const getSystemInstruction = (character: Character, mode: ChatMode, goal: string
     ${quizInstruction}`;
 };
 
-// 4. 定义返回数据的格式
 const responseSchema: Schema = {
   type: SchemaType.OBJECT,
   properties: {
@@ -141,7 +135,6 @@ const responseSchema: Schema = {
   required: ["pages", "vocabulary", "location"],
 };
 
-// 5. 解析 AI 返回的 JSON
 const parseResponse = (text: string) => {
     try {
         let cleanJson = text.trim();
@@ -150,18 +143,24 @@ const parseResponse = (text: string) => {
         } else if (cleanJson.startsWith('```')) {
             cleanJson = cleanJson.replace(/^```/, '').replace(/```$/, '');
         }
-        const parsed = JSON.parse(cleanJson);
-        return parsed;
+        return JSON.parse(cleanJson);
     } catch (e) {
         console.error("JSON Parse Error:", e);
         return { pages: [{ type: 'speech', text: "..." }], vocabulary: [], emotion: "neutral" };
     }
 };
 
-// 6. 翻译功能 (接收 apiKey 参数)
-export const translateText = async (text: string, targetLang: Language, apiKey?: string): Promise<string> => {
+// 6. 翻译功能 (接收 apiKey 和 modelName)
+export const translateText = async (
+    text: string, 
+    targetLang: Language, 
+    apiKey?: string,
+    modelName: string = 'gemini-1.5-flash' // 🔥 默认模型
+): Promise<string> => {
     const genAI = getGenAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
+    // 🔥 使用用户指定的模型
+    const model = genAI.getGenerativeModel({ model: modelName });
+    
     const target = targetLang === 'en' ? 'English' : 'Chinese (Simplified)';
     try {
         const result = await model.generateContent(
@@ -174,20 +173,22 @@ export const translateText = async (text: string, targetLang: Language, apiKey?:
     }
 };
 
-// 7. 开始对话 (接收 apiKey 参数)
+// 7. 开始对话 (接收 apiKey 和 modelName)
 export const startChat = async (
     character: Character, 
     mode: ChatMode, 
     goal: string, 
     topic: N3GrammarTopic,
     lang: Language,
-    apiKey?: string, // 🔥 必须加上这个参数，否则 key 会被当成 history！
+    apiKey?: string,
+    modelName: string = 'gemini-1.5-flash', // 🔥 新增参数
     history: Message[] = []
 ) => {
   const genAI = getGenAI(apiKey);
   
+  // 🔥 使用用户指定的模型
   const model = genAI.getGenerativeModel({
-    model: 'gemini-flash-latest',
+    model: modelName,
     systemInstruction: getSystemInstruction(character, mode, goal, topic, lang),
     generationConfig: {
         temperature: 0.7,
@@ -196,11 +197,9 @@ export const startChat = async (
     }
   });
 
-  // 创建新会话
   chatSession = model.startChat({ history: [] });
 
-  // ⚠️ 关键逻辑：如果传入的 history 是字符串（参数错位），或者真的是数组但为空
-  // 我们只在有真正的历史消息时才跳过开场白
+  // 防止参数错位
   if (Array.isArray(history) && history.length > 0) {
       return { pages: [], vocabulary: [] };
   }
