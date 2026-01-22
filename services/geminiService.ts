@@ -22,9 +22,9 @@ const WARDROBE: Record<string, string[]> = {
 // 全局对话 Session
 let chatSession: ChatSession | null = null;
 
-// 1. 获取 AI 实例 (优先使用用户 Key，没有则用默认 Key)
+// 1. 获取 AI 实例 (优先使用用户 Key)
 const getGenAI = (userApiKey?: string) => {
-  // 优先用玩家输入的 Key，如果没有，就用开发者环境变量里的 Key
+  // 🔥 修复点：优先读取传入的 userApiKey
   const key = userApiKey || (import.meta.env.VITE_GOOGLE_API_KEY as string);
   
   if (!key) {
@@ -181,7 +181,7 @@ export const startChat = async (
     goal: string, 
     topic: N3GrammarTopic,
     lang: Language,
-    apiKey?: string, // 🔥 新增参数
+    apiKey?: string, // 🔥 必须加上这个参数，否则 key 会被当成 history！
     history: Message[] = []
 ) => {
   const genAI = getGenAI(apiKey);
@@ -199,7 +199,9 @@ export const startChat = async (
   // 创建新会话
   chatSession = model.startChat({ history: [] });
 
-  if (history.length > 0) {
+  // ⚠️ 关键逻辑：如果传入的 history 是字符串（参数错位），或者真的是数组但为空
+  // 我们只在有真正的历史消息时才跳过开场白
+  if (Array.isArray(history) && history.length > 0) {
       return { pages: [], vocabulary: [] };
   }
 
@@ -223,7 +225,7 @@ export const startChat = async (
   }
 };
 
-// 8. 发送消息 (Session 已经包含了 Key 信息，所以不需要这里传)
+// 8. 发送消息
 export const sendMessage = async (text: string, isQuizRequest: boolean = false) => {
   if (!chatSession) {
       throw new Error("Session lost. Please re-enter chat.");
